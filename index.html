@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GameMatcher</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <header>
+        <h1>🎮 GameMatcher</h1>
+        <div style="margin-bottom: 20px;">
+            <button id="btnGames" class="nav-btn active" onclick="showSection('games')">Игры</button>
+            <button id="btnMood" class="nav-btn" onclick="showSection('mood')">Подбор по настроению</button>
+            <button id="btnAnalytics" class="nav-btn" onclick="showSection('analytics')">Аналитика</button>
+        </div>
+        
+        <div id="searchContainer" style="display: flex; justify-content: center; width: 100%;">
+            <input type="text" id="searchInput" placeholder="Поиск игры по названию или описанию...">
+        </div>
+    </header>
+
+    <main>
+        <!-- Вкладка: Подбор по настроению -->
+        <div id="moodSection" style="display: none; text-align: center; padding: 40px;">
+            <h2 style="color: white; font-size: 32px; margin-bottom: 30px;">Какое у тебя настроение?</h2>
+            <div style="display: flex; justify-content: center; gap: 20px; flex-wrap: wrap;">
+                <button class="mood-btn" onclick="findByMood('relax')">🧘 Расслабиться</button>
+                <button class="mood-btn" onclick="findByMood('action')">💥 Экшен и драйв</button>
+                <button class="mood-btn" onclick="findByMood('story')">📖 Погружение в сюжет</button>
+                <button class="mood-btn" onclick="findByMood('hardcore')">💀 Хардкор и вызов</button>
+                <button class="mood-btn" onclick="findByMood('horror')">👻 Ужасы и хоррор</button>
+            </div>
+        </div>
+
+        <!-- Вкладка: Аналитика -->
+        <div id="analyticsSection" style="display: none; padding: 20px;">
+            <h2 style="text-align: center; color: white; margin-bottom: 30px;">Аналитика рынка Steam</h2>
+            <div style="display: flex; justify-content: center; gap: 30px; flex-wrap: wrap;">
+                <div style="background: #1e1e1e; padding: 20px; border-radius: 16px; width: 500px; border: 1px solid #333;">
+                    <h3 style="color: white; text-align: center; margin-top: 0;">Количество игр по годам</h3>
+                    <canvas id="yearChart"></canvas>
+                </div>
+                <div style="background: #1e1e1e; padding: 20px; border-radius: 16px; width: 400px; border: 1px solid #333;">
+                    <h3 style="color: white; text-align: center; margin-top: 0;">Бесплатные vs Платные</h3>
+                    <canvas id="priceChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Сетка игр и кнопка "Показать еще" -->
+        <div id="loader">Загрузка базы игр (пожалуйста, подождите)...</div>
+        <div id="gamesGrid" class="games-grid"></div>
+        
+        <div style="text-align: center; margin-top: 40px; margin-bottom: 40px;">
+            <button id="loadMoreBtn" class="similar-btn" onclick="loadMore()" style="display: none; padding: 15px 40px; font-size: 18px;">Показать еще игры</button>
+        </div>
+    </main>
+
+    <script src="script.js"></script>
+
+    <!-- Модальное окно -->
+    <div id="gameModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeModal()">&times;</span>
+            <img id="modalImage" class="modal-image" src="" alt="Game Image">
+            <div class="modal-body">
+                <h2 id="modalTitle"></h2>
+                <p id="modalDesc" class="modal-desc"></p>
+                <div class="modal-details">
+                    <span id="modalPrice" class="game-price"></span>
+                    <span id="modalDev" class="modal-dev"></span>
+                    <span id="modalDate" class="modal-date"></span>
+                </div>
+                <button id="similarBtn" class="similar-btn" onclick="findSimilar()">Похожие игры</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
