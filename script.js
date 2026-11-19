@@ -53,7 +53,7 @@ function escapeHtml(unsafe) {
     return unsafe.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
 
-// ФИЛЬТРЫ И ВОПРОСЫ ПОД ИГРЫ
+// КОНФИГ ИГР
 const GAME_CONFIG = {
     'Counter-Strike 2': { question: { key: 'rank', label: 'Твой ранг', placeholder: 'Silver / MG / Global...' }, styles: ['Снайпер (AWPer)', 'Стрелок (Rifler)', 'Поддержка (Support)', 'Защитник (Anchor)'] },
     'Dota 2': { question: { key: 'rank', label: 'Твой ранг (MMR)', placeholder: 'Herald / Legend / Divine...' }, styles: ['Керри (Carry)', 'Мидер (Mid)', 'Оффлейнер (Offlane)', 'Саппорт (Support)'] },
@@ -68,10 +68,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     const loader = document.getElementById("loader"), gamesGrid = document.getElementById("gamesGrid"), searchInput = document.getElementById("searchInput"), searchContainer = document.getElementById("searchContainer");
     let allGames = [], isLoaded = false, currentGame = null, chartsBuilt = false, displayCount = 100;
     let currentUser = null;
-    let editingTmId = null;
     let activeChatFriend = null;
+    let realtimeChannel = null;
 
-    // --- АВТОРИЗАЦИЯ ---
+    // --- АВТОРИЗАЦИЯ И ПРОФИЛЬ ---
     async function checkUser() {
         const { data: { user } } = await _supabase.auth.getUser();
         currentUser = user;
@@ -79,7 +79,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             document.getElementById("btnLogin").style.display = "none";
             document.getElementById("user-info").style.display = "block";
             document.getElementById("menuUserEmail").innerText = user.email;
-            updateOnlineStatus();
             
             let avatar = localStorage.getItem('avatar_' + user.id);
             if (avatar) {
@@ -98,7 +97,16 @@ document.addEventListener("DOMContentLoaded", async () => {
                 document.getElementById("user-avatar").src = canvas.toDataURL();
                 document.getElementById("menuUserAvatar").src = canvas.toDataURL();
             }
+            
+            if(!realtimeChannel) {
+                realtimeChannel = _supabase.channel('custom-all-channel')
+                  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+                      if (activeChatFriend) renderPrivateMessages();
+                  }).subscribe();
+            }
+
             updateRequestBadge();
+            if(document.getElementById('btnFriends').classList.contains('active')) renderFriends();
         } else {
             document.getElementById("btnLogin").style.display = "block";
             document.getElementById("user-info").style.display = "none";
@@ -114,7 +122,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             document.getElementById("user-info").style.display = "block"; 
             document.getElementById("menuUserEmail").innerText = session.user.email; 
             closeAuthModal(); 
-            updateOnlineStatus(); 
             checkUser();
         }
         else if (event === 'SIGNED_OUT') { 
@@ -159,20 +166,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         const menu = document.getElementById('profileMenu');
         menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
     };
-
     window.addEventListener('click', (event) => {
         const menu = document.getElementById('profileMenu');
         const container = document.getElementById('auth-container');
-        if (menu && menu.style.display === 'block' && !container.contains(event.target)) {
-            menu.style.display = 'none';
-        }
+        if (menu && menu.style.display === 'block' && !container.contains(event.target)) menu.style.display = 'none';
     });
-
     window.triggerAvatarUpload = () => {
         document.getElementById('avatarInput').click();
         document.getElementById('profileMenu').style.display = 'none';
     };
-
     window.handleAvatarUpload = (event) => {
         const file = event.target.files[0];
         if (!file) return;
@@ -185,6 +187,11 @@ document.addEventListener("DOMContentLoaded", async () => {
             alert("Аватарка обновлена!");
         };
         reader.readAsDataURL(file);
+    };
+
+    window.toggleMobileMenu = () => {
+        const nav = document.getElementById('navMenu');
+        if(nav) nav.classList.toggle('show-mobile');
     };
 
     // --- ИИ ---
@@ -221,7 +228,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (allGames.length > displayCount) document.getElementById("loadMoreBtn").style.display = "inline-block";
         },
         error: function() {
-            loader.innerHTML = `<div style="color:#ef4444;text-align:center;padding:20px;">Ошибка загрузки games.csv. Убедись, что файл на месте.</div>`;
+            loader.innerHTML = `<div style="color:#ef4444;text-align:center;padding:20px;">Ошибка загрузки games.csv.</div>`;
         }
     });
 
@@ -252,7 +259,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         document.getElementById("modalPrice").innerText = formatPrice(game); 
         document.getElementById("modalDev").innerText = "Разработчик: " + (game.developers || "Неизвестен"); 
         document.getElementById("modalDate").innerText = "Дата выхода: " + (game.release_date || "Неизвестна"); 
-        
         const shareBtn = document.getElementById('shareBtn');
         if(shareBtn) shareBtn.onclick = () => { navigator.clipboard.writeText(window.location.origin + window.location.pathname + '?game=' + game.appid).then(() => alert("Скопировано!")); };
     };
@@ -278,6 +284,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
 
     window.showSection = (section) => {
+        const nav = document.getElementById('navMenu'); if(nav) nav.classList.remove('show-mobile');
         if(document.getElementById('tmNick')) { document.getElementById('tmNick').value = ''; document.getElementById('tmNick').classList.remove('input-error'); }
         if(document.getElementById('tmRank')) { document.getElementById('tmRank').value = ''; document.getElementById('tmRank').classList.remove('input-error'); }
         if(document.getElementById('tmSteamId')) { document.getElementById('tmSteamId').value = ''; }
@@ -289,7 +296,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         document.getElementById('gamesGrid').style.display = 'none'; 
         document.getElementById('analyticsSection').style.display = 'none';
         if (document.getElementById('gamesCount')) document.getElementById('gamesCount').style.display = 'none';
-        
         document.getElementById('moodSection').style.display = 'none'; 
         document.getElementById('teammatesSection').style.display = 'none';
         document.getElementById('requestsSection').style.display = 'none'; 
@@ -309,12 +315,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         else if (section === 'mood') { document.getElementById('btnMood').classList.add('active'); document.getElementById('moodSection').style.display = 'block'; searchContainer.style.display = 'none'; }
         else if (section === 'teammates') { document.getElementById('btnTeammates').classList.add('active'); document.getElementById('teammatesSection').style.display = 'block'; searchContainer.style.display = 'none'; }
         else if (section === 'requests') { document.getElementById('btnRequests').classList.add('active'); document.getElementById('requestsSection').style.display = 'block'; searchContainer.style.display = 'none'; renderRequests(); }
-        else if (section === 'friends') { 
-            document.getElementById('btnFriends').classList.add('active'); 
-            document.getElementById('friendsSection').style.display = 'block'; 
-            searchContainer.style.display = 'none'; 
-            renderFriends(); 
-        }
+        else if (section === 'friends') { document.getElementById('btnFriends').classList.add('active'); document.getElementById('friendsSection').style.display = 'block'; searchContainer.style.display = 'none'; renderFriends(); }
     }
 
     function buildCharts() {
@@ -353,7 +354,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         if(foundGames.length === 0) results.innerHTML = "<p style='color: #aaa; text-align: center; grid-column: 1/-1;'>Ничего не найдено.</p>"; else { renderGames(foundGames.slice(0, 30), results); window.scrollTo({ top: 400, behavior: 'smooth' }); }
     }
 
-    // --- ТИММЕЙТЫ ---
+    // --- ТИММЕЙТЫ (СИНХРОНИЗАЦИЯ С SUPABASE) ---
     let currentTeammateGame = "";
     
     window.openTeammatesForGame = (gameName, gameImage) => { 
@@ -367,7 +368,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         dynContainer.innerHTML = "";
         if (GAME_CONFIG[gameName] && GAME_CONFIG[gameName].question) {
             let q = GAME_CONFIG[gameName].question;
-            dynContainer.innerHTML += `<input type="text" id="tm_dyn_${q.key}" placeholder="${q.label}" style="width: 100%; padding: 12px; background: #0b0e14; border: 1px solid #333; color: white; border-radius: 8px; font-family: 'Montserrat';">`;
+            dynContainer.innerHTML += `<input type="text" id="tm_dyn_${q.key}" placeholder="${q.label} (${q.placeholder})" style="width: 100%; padding: 12px; background: #0b0e14; border: 1px solid #333; color: white; border-radius: 8px; font-family: 'Montserrat';">`;
         }
 
         const styleSelectForm = document.getElementById('tmStyle');
@@ -384,7 +385,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         const hintEl = document.getElementById('hoursHint');
         if (gameName === 'Fortnite' || gameName === 'League of Legends') {
-            hintEl.innerText = "⏱ Часы в этой игре не отображаются в Steam — посмотреть можно в лаунчере (Epic Games / Riot Client) или на сайте tracker.gg.";
+            hintEl.innerText = "⏱ Часы в этой игре не отображаются в Steam — посмотреть можно в лаунчере или на tracker.gg.";
             hintEl.style.display = "block";
         } else hintEl.style.display = "none";
         
@@ -395,7 +396,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     
     window.showCreateForm = () => { 
         if (!currentUser) { alert("Войдите в аккаунт, чтобы создать анкету!"); showAuthModal(); return; } 
-        editingTmId = null;
         document.getElementById('formTitle').innerText = "Новая анкета";
         document.getElementById('tmNick').value = ''; 
         document.getElementById('tmRank').value = ''; 
@@ -410,15 +410,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         const style = document.getElementById('tmStyle').value;
         const color = document.getElementById('tmColor').value;
         
-        let hasError = false;
-        if (!/^[a-zA-Zа-яА-Я0-9_]{3,20}$/.test(nick)) { document.getElementById('tmNick').classList.add('input-error'); hasError = true; } else { document.getElementById('tmNick').classList.remove('input-error'); }
-        if (!/^\d{1,5}$/.test(rank)) { document.getElementById('tmRank').classList.add('input-error'); hasError = true; } else { document.getElementById('tmRank').classList.remove('input-error'); }
-        if (hasError) { alert("Исправьте ошибки в полях."); return; }
-        
-        if (steamId && !/^\d{9}$/.test(steamId)) { alert("Код дружбы Steam должен состоять ровно из 9 цифр."); return; }
-        
-        let textToCheck = (nick + " " + desc).toLowerCase();
-        if (['хуй', 'пизд', 'бля', 'fuck', 'shit', 'реклама', 'купить', 'наркот', 'http'].some(w => textToCheck.includes(w))) { alert("Запрещенные слова!"); return; }
+        if (!/^[a-zA-Zа-яА-Я0-9_]{3,20}$/.test(nick)) { alert("Ник: только буквы и цифры, от 3 до 20 символов."); return; }
+        if (!/^\d{1,5}$/.test(rank)) { alert("Часы: только цифры."); return; }
+        if (steamId && !/^\d{9}$/.test(steamId)) { alert("Код дружбы Steam: ровно 9 цифр."); return; }
 
         let answers = {};
         if (GAME_CONFIG[currentTeammateGame] && GAME_CONFIG[currentTeammateGame].question) {
@@ -428,128 +422,77 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         let aiText = "";
-        try {
-            const aiResponse = await askZveno(`Проанализируй стиль игрока в 1 предложении на русском: "${desc}"`);
-            if(aiResponse) aiText = "🤖 Анализ ИИ: " + aiResponse;
-        } catch(e) {}
+        try { const aiResponse = await askZveno(`Проанализируй стиль игрока в 1 предложении: "${desc}"`); if(aiResponse) aiText = aiResponse; } catch(e) {}
 
-        let db = JSON.parse(localStorage.getItem('teammates_db_v3')) || [];
-        
-        if (editingTmId) {
-            let idx = db.findIndex(t => t.id === editingTmId);
-            if (idx !== -1) {
-                db[idx] = { ...db[idx], nick, rank, desc, style, steamId, ai: aiText || db[idx].ai, answers, color, updated_at: Date.now() };
-            }
-        } else {
-            if (db.some(t => t.user_id === currentUser.id && t.game === currentTeammateGame)) { alert("Вы уже создали анкету для этой игры! Отредактируйте или удалите старую."); return; }
-            const newTm = { 
-                id: crypto.randomUUID(), game: currentTeammateGame, 
-                nick, rank, desc, style, steamId, 
-                ai: aiText, answers, color,
-                likes: 0, user_id: currentUser.id, updated_at: Date.now()
-            };
-            db.unshift(newTm); 
-        }
-        
-        localStorage.setItem('teammates_db_v3', JSON.stringify(db));
-        document.getElementById('createForm').style.display = 'none'; 
-        editingTmId = null;
+        const { data, error } = await _supabase.from('teammates').insert([{
+            user_id: currentUser.id, user_email: currentUser.email, game: currentTeammateGame,
+            nick: nick, rank: rank, style: style, desc_text: desc,
+            answers: answers, color: color, steam_id: steamId, ai_analysis: aiText
+        }]);
+
+        if (error) { alert("Ошибка при сохранении: " + error.message); } 
+        else { document.getElementById('createForm').style.display = 'none'; renderTeammatesForGame(); }
+    };
+
+    window.deleteTeammate = async (id) => {
+        if (!confirm("Удалить анкету?")) return;
+        await _supabase.from('teammates').delete().eq('id', id);
         renderTeammatesForGame();
     };
 
-    window.editTeammate = (id) => {
-        let db = JSON.parse(localStorage.getItem('teammates_db_v3')) || [];
-        let t = db.find(x => x.id === id);
-        if (!t) return;
-        
-        editingTmId = id;
-        document.getElementById('formTitle').innerText = "Редактирование анкеты";
-        document.getElementById('tmNick').value = t.nick;
-        document.getElementById('tmRank').value = t.rank;
-        document.getElementById('tmDesc').value = t.desc;
-        document.getElementById('tmSteamId').value = t.steamId || '';
-        document.getElementById('tmColor').value = t.color || '#3b82f6';
-        if (t.style) document.getElementById('tmStyle').value = t.style;
-        
-        if (GAME_CONFIG[currentTeammateGame] && t.answers) {
-            let q = GAME_CONFIG[currentTeammateGame].question;
-            if(q) {
-                const el = document.getElementById('tm_dyn_' + q.key);
-                if (el) el.value = t.answers[q.key] || '';
-            }
-        }
-        
-        document.getElementById('createForm').style.display = 'block';
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.likeTeammate = async (id) => {
+        if (!currentUser) { alert("Войдите, чтобы ставить лайки!"); return; }
+        const { data } = await _supabase.from('teammates').select('likes').eq('id', id).single();
+        if(data) await _supabase.from('teammates').update({ likes: (data.likes || 0) + 1 }).eq('id', id);
+        renderTeammatesForGame(); 
     };
 
-    window.renderTeammatesForGame = () => {
-        const grid = document.getElementById('teammatesGrid'); grid.innerHTML = "";
-        let db = JSON.parse(localStorage.getItem('teammates_db_v3')) || [];
-        let filtered = db.filter(t => t.game === currentTeammateGame);
+    window.renderTeammatesForGame = async () => {
+        const grid = document.getElementById('teammatesGrid'); grid.innerHTML = "<p style='text-align:center; width:100%; color:#aaa;'>Загрузка анкет...</p>";
+        const { data: db, error } = await _supabase.from('teammates').select('*').eq('game', currentTeammateGame);
         
+        if (error) { grid.innerHTML = "<p style='color:red;'>Ошибка загрузки</p>"; return; }
+
         const filtersContainer = document.getElementById('filtersContainer');
-        if (filtered.length > 0) {
-            filtersContainer.style.display = 'flex';
-        } else {
-            filtersContainer.style.display = 'none';
-        }
+        if (db && db.length > 0) filtersContainer.style.display = 'flex';
+        else filtersContainer.style.display = 'none';
 
-        let requests = JSON.parse(localStorage.getItem('requests_db')) || [];
-        let mySent = requests.filter(r => r.from === currentUser?.email).map(r => r.to);
-        let friends = requests.filter(r => r.status === 'accepted' && (r.from === currentUser?.email || r.to === currentUser?.email));
-
+        let filtered = db || [];
         const onlyMine = document.getElementById('onlyMine').checked;
         const filterStyle = document.getElementById('filterStyle').value;
-        
-        if (onlyMine && currentUser) {
-            filtered = filtered.filter(t => t.user_id === currentUser.id);
-        }
-        if (filterStyle !== 'all') {
-            filtered = filtered.filter(t => t.style === filterStyle);
-        }
+        if (onlyMine && currentUser) filtered = filtered.filter(t => t.user_id === currentUser.id);
+        if (filterStyle !== 'all') filtered = filtered.filter(t => t.style === filterStyle);
 
         const countEl = document.getElementById('teammatesCount');
         if (countEl) countEl.innerText = `Найдено: ${filtered.length} анкет`;
+        grid.innerHTML = "";
 
-        if(filtered.length === 0) { grid.innerHTML = "<p style='color:#aaa; text-align:center; grid-column: 1/-1;'>Анкет не найдено. Измените фильтры или создайте свою!</p>"; return; }
+        if(filtered.length === 0) { grid.innerHTML = "<p style='color:#aaa; text-align:center; grid-column: 1/-1;'>Анкет не найдено. Создайте свою!</p>"; return; }
         
         filtered.sort((a, b) => (b.likes || 0) - (a.likes || 0));
         
-        filtered.forEach((t, index) => {
+        const { data: friendsData } = await _supabase.from('requests').select('*').eq('status', 'accepted');
+        const myFriends = (friendsData || []).filter(r => r.from_email === currentUser?.email || r.to_email === currentUser?.email);
+
+        filtered.forEach((t) => {
             const card = document.createElement('div'); card.className = "teammate-card";
             let isMyProfile = currentUser && t.user_id === currentUser.id;
-            let isFriend = friends.some(f => f.from === currentUser?.email && f.to === t.nick || f.to === currentUser?.email && f.from === t.nick);
-            let isInvited = mySent.includes(t.nick);
+            let isFriend = myFriends.some(f => f.from_email === t.user_email || f.to_email === t.user_email);
             let cardColor = t.color || '#3b82f6';
-
-            let styleHtml = `style="border-top: 4px solid ${cardColor}; box-shadow: 0 0 15px ${cardColor}33;"`;
 
             let actionBtn = "";
             if (isMyProfile) {
-                actionBtn = `<button onclick="editTeammate('${t.id}')" class="similar-btn" style="flex-grow: 1; background: ${cardColor}; color: white; padding: 10px; border-radius: 8px; font-weight: bold; cursor: pointer;">Редактировать</button>
-                             <button onclick="deleteTeammate('${t.id}')" style="background: #ef4444; color: white; border: none; padding: 10px; border-radius: 8px; font-weight: bold; cursor: pointer; width: 40px;">🗑</button>`;
-            } else if (isInvited) {
-                actionBtn = `<button disabled style="background: #374151; color: #9ca3af; border: none; padding: 10px; border-radius: 8px; font-weight: bold; flex-grow: 1; cursor: not-allowed;">Ожидание...</button>`;
+                actionBtn = `<button onclick="deleteTeammate('${t.id}')" style="background: #ef4444; color: white; border: none; padding: 10px; border-radius: 8px; font-weight: bold; cursor: pointer; flex-grow: 1;">Удалить</button>`;
             } else {
-                actionBtn = `<button class="invite-btn" onclick="invitePlayer('${escapeHtml(t.nick)}')" style="flex-grow: 1; background: linear-gradient(135deg, ${cardColor}, #059669);">Пригласить</button>`;
+                actionBtn = `<button class="invite-btn" onclick="invitePlayer('${escapeHtml(t.user_email)}', '${escapeHtml(t.nick)}')" style="flex-grow: 1; background: linear-gradient(135deg, ${cardColor}, #059669);">Пригласить</button>`;
             }
 
-            let userAv = localStorage.getItem('avatar_' + t.user_id);
-            let avatarHtml = userAv 
-                ? `<img src="${userAv}" class="teammate-avatar" style="border-color: ${cardColor};">` 
-                : `<div class="avatar-placeholder" style="background: linear-gradient(135deg, ${cardColor}, #8b5cf6);">${escapeHtml(t.nick.charAt(0).toUpperCase())}</div>`;
-
-            let isOnline = t.updated_at && (Date.now() - t.updated_at < 5 * 60 * 1000);
-            let onlineDot = isOnline ? `<span class="online-dot" title="Онлайн"></span>` : ``;
+            let avatarHtml = `<div class="avatar-placeholder" style="background: linear-gradient(135deg, ${cardColor}, #8b5cf6);">${escapeHtml(t.nick.charAt(0).toUpperCase())}</div>`;
 
             let steamIdHtml = "";
-            if (t.steamId) {
-                if (isMyProfile || isFriend) {
-                    steamIdHtml = `<p style="color: #66c0f4; font-size: 12px; margin-top: 5px;">Код дружбы Steam: ${escapeHtml(t.steamId)}</p>`;
-                } else {
-                    steamIdHtml = `<p style="color: #6b7280; font-size: 12px; margin-top: 5px; font-style: italic;">🔒 Код дружбы скрыт (доступен друзьям)</p>`;
-                }
+            if (t.steam_id) {
+                if (isMyProfile || isFriend) steamIdHtml = `<p style="color: #66c0f4; font-size: 12px; margin-top: 5px;">Код Steam: ${escapeHtml(t.steam_id)}</p>`;
+                else steamIdHtml = `<p style="color: #6b7280; font-size: 12px; margin-top: 5px; font-style: italic;">🔒 Код скрыт</p>`;
             }
 
             let answersHtml = "";
@@ -557,42 +500,20 @@ document.addEventListener("DOMContentLoaded", async () => {
                 answersHtml = Object.entries(t.answers).map(([k, v]) => `<span style="display:inline-block; background:rgba(255,255,255,0.05); padding:4px 8px; border-radius:4px; font-size:12px; margin-right:5px; margin-top:5px; color:#ccc;">${escapeHtml(v)}</span>`).join('');
             }
 
-            let aiHtml = "";
-            if (t.ai && !t.ai.includes("Сбалансированный игрок")) {
-                aiHtml = `<details class="ai-details" style="margin: 10px 0; background: rgba(59, 130, 246, 0.1); border-left: 4px solid ${cardColor}; padding: 10px; border-radius: 4px;"><summary>🤖 Анализ ИИ</summary><div style="font-size: 13px; color: #d1d5db; margin-top: 5px;">${escapeHtml(t.ai.replace('🤖 Анализ ИИ: ', ''))}</div></details>`;
-            } else if (!isMyProfile) {
-                aiHtml = `<div id="ai-tm-${t.id}" style="margin: 10px 0; background: rgba(59, 130, 246, 0.1); border-left: 4px solid ${cardColor}; padding: 10px; border-radius: 4px; font-size: 13px; color: #9ca3af; animation: pulse 1.5s infinite;">🤖 ИИ анализирует стиль игрока...</div>`;
-                
-                askZveno(`Проанализируй стиль игрока в 1 предложении на русском: "${t.desc}"`).then(res => {
-                    let finalAi = "🤖 Анализ ИИ: " + (res || "Сбалансированный игрок.");
-                    let dbUpdate = JSON.parse(localStorage.getItem('teammates_db_v3')) || [];
-                    let idx = dbUpdate.findIndex(x => x.id === t.id);
-                    if (idx !== -1) {
-                        dbUpdate[idx].ai = finalAi;
-                        localStorage.setItem('teammates_db_v3', JSON.stringify(dbUpdate));
-                        let el = document.getElementById(`ai-tm-${t.id}`);
-                        if (el) {
-                            el.outerHTML = `<details class="ai-details" style="margin: 10px 0; background: rgba(59, 130, 246, 0.1); border-left: 4px solid ${cardColor}; padding: 10px; border-radius: 4px;"><summary>🤖 Анализ ИИ</summary><div style="font-size: 13px; color: #d1d5db; margin-top: 5px;">${escapeHtml(res)}</div></details>`;
-                        }
-                    }
-                }).catch(err => {
-                    let el = document.getElementById(`ai-tm-${t.id}`);
-                    if (el) el.innerText = "🤖 Анализ временно недоступен (лимит ИИ).";
-                });
-            }
+            let aiHtml = t.ai_analysis ? `<details class="ai-details" style="margin: 10px 0; background: rgba(59, 130, 246, 0.1); border-left: 4px solid ${cardColor}; padding: 10px; border-radius: 4px;"><summary>🤖 Анализ ИИ</summary><div style="font-size: 13px; color: #d1d5db; margin-top: 5px;">${escapeHtml(t.ai_analysis)}</div></details>` : "";
 
             card.innerHTML = `
-                <div class="teammate-header" style="align-items: flex-start;" ${styleHtml}>
+                <div class="teammate-header" style="align-items: flex-start; border-top: 4px solid ${cardColor}; padding-top: 15px;">
                     <div style="display:flex; gap: 12px; align-items: center;">
                         ${avatarHtml}
                         <div>
-                            <h3 class="teammate-name" style="margin:0;">${escapeHtml(t.nick)} ${onlineDot}</h3>
+                            <h3 class="teammate-name" style="margin:0;">${escapeHtml(t.nick)}</h3>
                             <span class="teammate-rank" style="display:inline-block; margin-top:5px; color: ${cardColor};">${escapeHtml(t.rank)} ч. • ${escapeHtml(t.style || 'Стиль не указан')}</span>
                         </div>
                     </div>
                 </div>
                 ${aiHtml}
-                <p style="color: #aaa; font-size: 14px; margin-bottom: 10px;">${escapeHtml(t.desc)}</p>
+                <p style="color: #aaa; font-size: 14px; margin-bottom: 10px;">${escapeHtml(t.desc_text)}</p>
                 <div style="margin-bottom: 10px;">${answersHtml}</div>
                 ${steamIdHtml}
                 <div style="display: flex; gap: 10px; margin-top: auto; align-items: center; padding-top: 15px;">
@@ -604,159 +525,110 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
     };
 
-    window.deleteTeammate = (id) => {
-        if (!confirm("Удалить анкету? Все отправленные на неё запросы тоже будут удалены.")) return;
-        let db = JSON.parse(localStorage.getItem('teammates_db_v3')) || [];
-        let tmToDelete = db.find(t => t.id === id);
-        db = db.filter(t => t.id !== id);
-        localStorage.setItem('teammates_db_v3', JSON.stringify(db));
-        if (tmToDelete) {
-            let requests = JSON.parse(localStorage.getItem('requests_db')) || [];
-            requests = requests.filter(r => r.to !== tmToDelete.nick);
-            localStorage.setItem('requests_db', JSON.stringify(requests));
-        }
-        renderTeammatesForGame();
-    };
-
-    window.likeTeammate = (id) => {
-        if (!currentUser) { alert("Войдите, чтобы ставить лайки!"); return; }
-        let db = JSON.parse(localStorage.getItem('teammates_db_v3')) || [];
-        let targetTm = db.find(t => t.id === id);
-        if (!targetTm) return;
-        let likedBy = JSON.parse(localStorage.getItem('liked_by')) || [];
-        if (likedBy.includes(currentUser.id + "_" + id)) { alert("Вы уже лайкнули эту анкету!"); return; }
-        likedBy.push(currentUser.id + "_" + id); 
-        localStorage.setItem('liked_by', JSON.stringify(likedBy));
-        targetTm.likes = (targetTm.likes || 0) + 1; 
-        localStorage.setItem('teammates_db_v3', JSON.stringify(db)); 
-        renderTeammatesForGame(); 
-    };
-
     // --- ЗАПРОСЫ ---
-    window.invitePlayer = (nick) => {
+    window.invitePlayer = async (email, nick) => {
         if (!currentUser) { alert("Войдите, чтобы отправлять запросы!"); return; }
-        let requests = JSON.parse(localStorage.getItem('requests_db')) || [];
-        if (requests.some(r => r.to === nick && r.status === 'pending')) { alert("Вы уже отправили запрос!"); return; }
-        requests.push({ from: currentUser.email, to: nick, game: currentTeammateGame, status: 'pending', type: 'outgoing' });
-        localStorage.setItem('requests_db', JSON.stringify(requests)); 
+        if(email === currentUser.email) return;
+        await _supabase.from('requests').insert([{ from_email: currentUser.email, to_email: email, game: currentTeammateGame, status: 'pending' }]);
         alert("Приглашение отправлено!"); 
         updateRequestBadge();
-        renderTeammatesForGame();
     };
 
     let currentRequestTab = 'incoming';
     window.switchRequests = (tab) => { currentRequestTab = tab; document.getElementById('btnIncoming').classList.remove('active'); document.getElementById('btnOutgoing').classList.remove('active'); document.getElementById(tab === 'incoming' ? 'btnIncoming' : 'btnOutgoing').classList.add('active'); renderRequests(); };
 
-    window.renderRequests = () => {
-        const list = document.getElementById('requestsList'); list.innerHTML = "";
-        if (!currentUser) { list.innerHTML = `<p style="color: #aaa; text-align: center; grid-column: 1/-1;">Войдите, чтобы видеть запросы.</p>`; return; }
-        let requests = JSON.parse(localStorage.getItem('requests_db')) || [];
-        let filtered = currentRequestTab === 'incoming' ? requests.filter(r => r.to === currentUser.email) : requests.filter(r => r.from === currentUser.email);
-        if (filtered.length === 0) { list.innerHTML = `<p style="color: #aaa; text-align: center; grid-column: 1/-1;">Здесь пока пусто.</p>`; return; }
+    window.renderRequests = async () => {
+        const list = document.getElementById('requestsList'); list.innerHTML = "Загрузка...";
+        if (!currentUser) { list.innerHTML = `<p style="text-align: center;">Войдите.</p>`; return; }
         
-        filtered.forEach((req) => {
-            const originalIndex = requests.findIndex(r => r.from === req.from && r.to === req.to && r.game === req.game);
+        let query = _supabase.from('requests').select('*');
+        if (currentRequestTab === 'incoming') query = query.eq('to_email', currentUser.email);
+        else query = query.eq('from_email', currentUser.email);
+        
+        const { data: requests, error } = await query;
+        if (error) { list.innerHTML = "Ошибка"; return; }
+        list.innerHTML = "";
+        
+        if (requests.length === 0) { list.innerHTML = `<p style="color: #aaa; text-align: center; grid-column: 1/-1;">Здесь пока пусто.</p>`; return; }
+        
+        requests.forEach((req) => {
             const card = document.createElement('div'); card.className = "teammate-card"; card.style.padding = "15px";
             let actionsHtml = "";
             if (currentRequestTab === 'incoming' && req.status === 'pending') {
-                actionsHtml = `<div style="display: flex; gap: 10px; margin-top: 10px;"><button onclick="acceptRequest(${originalIndex})" style="flex: 1; background: #10b981; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer;">Принять</button><button onclick="rejectRequest(${originalIndex})" style="flex: 1; background: #ef4444; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer;">Отклонить</button></div>`;
-            } else if (req.status === 'accepted') {
-                actionsHtml = `<p style="color: #10b981; font-weight: bold; margin-top: 10px;">✅ Принято</p>`;
-            } else if (req.status === 'rejected') {
-                actionsHtml = `<p style="color: #ef4444; font-weight: bold; margin-top: 10px;">❌ Отклонено</p>`;
-            }
-            card.innerHTML = `<div style="font-size: 14px; margin-bottom: 5px;">${currentRequestTab === 'incoming' ? 'От: <b>' + escapeHtml(req.from) + '</b>' : 'Кому: <b>' + escapeHtml(req.to) + '</b>'}</div><div style="color: #aaa; font-size: 12px; margin-bottom: 10px;">Игра: ${escapeHtml(req.game)}</div>${actionsHtml}`;
+                actionsHtml = `<div style="display: flex; gap: 10px; margin-top: 10px;"><button onclick="acceptRequest('${req.id}')" style="flex: 1; background: #10b981; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer;">Принять</button><button onclick="rejectRequest('${req.id}')" style="flex: 1; background: #ef4444; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer;">Отклонить</button></div>`;
+            } else if (req.status === 'accepted') { actionsHtml = `<p style="color: #10b981; font-weight: bold; margin-top: 10px;">✅ Принято</p>`; } 
+            else if (req.status === 'rejected') { actionsHtml = `<p style="color: #ef4444; font-weight: bold; margin-top: 10px;">❌ Отклонено</p>`; }
+            
+            card.innerHTML = `<div style="font-size: 14px; margin-bottom: 5px;">${currentRequestTab === 'incoming' ? 'От: <b>' + escapeHtml(req.from_email) + '</b>' : 'Кому: <b>' + escapeHtml(req.to_email) + '</b>'}</div><div style="color: #aaa; font-size: 12px; margin-bottom: 10px;">Игра: ${escapeHtml(req.game || 'Любая')}</div>${actionsHtml}`;
             list.appendChild(card);
         });
     };
 
-    window.acceptRequest = (index) => { 
-        let requests = JSON.parse(localStorage.getItem('requests_db')) || []; 
-        if(requests[index]) requests[index].status = 'accepted'; 
-        localStorage.setItem('requests_db', JSON.stringify(requests)); 
-        renderRequests(); updateRequestBadge(); 
-    };
-    window.rejectRequest = (index) => { 
-        let requests = JSON.parse(localStorage.getItem('requests_db')) || []; 
-        if(requests[index]) requests[index].status = 'rejected'; 
-        localStorage.setItem('requests_db', JSON.stringify(requests)); 
-        renderRequests(); updateRequestBadge(); 
-    };
-    window.updateRequestBadge = () => { 
+    window.acceptRequest = async (id) => { await _supabase.from('requests').update({status: 'accepted'}).eq('id', id); renderRequests(); updateRequestBadge(); };
+    window.rejectRequest = async (id) => { await _supabase.from('requests').update({status: 'rejected'}).eq('id', id); renderRequests(); updateRequestBadge(); };
+    
+    window.updateRequestBadge = async () => { 
         if(!currentUser) return; 
-        let requests = JSON.parse(localStorage.getItem('requests_db')) || []; 
-        let pendingCount = requests.filter(r => r.to === currentUser.email && r.status === 'pending').length; 
+        const { data } = await _supabase.from('requests').select('id').eq('to_email', currentUser.email).eq('status', 'pending');
+        let count = data ? data.length : 0;
         let badge = document.getElementById('reqBadge'); 
-        if (pendingCount > 0) { badge.style.display = 'inline-block'; badge.innerText = pendingCount; } else badge.style.display = 'none'; 
+        if (count > 0) { badge.style.display = 'inline-block'; badge.innerText = count; } else badge.style.display = 'none'; 
     };
 
     // --- ДРУЗЬЯ И ЧАТ ---
-    window.renderFriends = () => {
-        const list = document.getElementById('friendsList'); list.innerHTML = "";
-        if (!currentUser) { list.innerHTML = `<p style="color: #aaa; text-align: center; padding: 20px;">Войдите, чтобы видеть друзей.</p>`; return; }
-        let requests = JSON.parse(localStorage.getItem('requests_db')) || [];
-        let friends = requests.filter(r => r.status === 'accepted' && (r.from === currentUser.email || r.to === currentUser.email));
+    window.renderFriends = async () => {
+        const list = document.getElementById('friendsList'); list.innerHTML = "Загрузка...";
+        if (!currentUser) { list.innerHTML = `<p>Войдите.</p>`; return; }
         
+        const { data: reqs } = await _supabase.from('requests').select('*').eq('status', 'accepted');
+        const friends = (reqs || []).filter(r => r.from_email === currentUser.email || r.to_email === currentUser.email);
+        
+        list.innerHTML = "";
         if (friends.length === 0) { list.innerHTML = `<p style="color: #aaa; text-align: center; padding: 20px;">У вас пока нет друзей.</p>`; return; }
         
         friends.forEach(friend => {
-            const friendName = friend.from === currentUser.email ? friend.to : friend.from;
+            const friendEmail = friend.from_email === currentUser.email ? friend.to_email : friend.from_email;
             const item = document.createElement('div');
-            item.className = "friend-item" + (activeChatFriend === friendName ? " active" : "");
-            item.onclick = () => openPrivateChat(friendName);
-            
-            let initial = friendName.charAt(0).toUpperCase();
-            item.innerHTML = `<div style="width: 40px; height: 40px; border-radius: 50%; background: #3b82f6; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">${initial}</div><span style="color: white; font-weight: 600;">${escapeHtml(friendName)}</span>`;
+            item.className = "friend-item" + (activeChatFriend === friendEmail ? " active" : "");
+            item.onclick = () => openPrivateChat(friendEmail);
+            item.innerHTML = `<div style="width: 40px; height: 40px; border-radius: 50%; background: #3b82f6; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">${friendEmail.charAt(0).toUpperCase()}</div><span style="color: white; font-weight: 600;">${escapeHtml(friendEmail.split('@')[0])}</span>`;
             list.appendChild(item);
         });
     };
 
-    window.openPrivateChat = (friendName) => {
-        activeChatFriend = friendName;
+    window.openPrivateChat = (friendEmail) => {
+        activeChatFriend = friendEmail;
         renderFriends();
-        document.getElementById('privateChatHeader').innerText = "Чат с " + friendName;
+        document.getElementById('privateChatHeader').innerText = "Чат с " + friendEmail.split('@')[0];
         document.getElementById('privateChatInputArea').style.display = 'flex';
         renderPrivateMessages();
     };
 
-    window.sendPrivateMessage = () => {
+    window.sendPrivateMessage = async () => {
         if (!activeChatFriend) return;
         const input = document.getElementById('privateChatInput');
         const text = input.value.trim();
         if (!text) return;
 
-        let msgs = JSON.parse(localStorage.getItem('private_msgs')) || [];
         let chatId = [currentUser.email, activeChatFriend].sort().join('_');
-        msgs.push({ chatId, from: currentUser.email, text, time: Date.now() });
-        localStorage.setItem('private_msgs', JSON.stringify(msgs));
+        await _supabase.from('messages').insert([{ chat_id: chatId, sender_email: currentUser.email, text: text }]);
         input.value = '';
         renderPrivateMessages();
     };
 
-    window.renderPrivateMessages = () => {
+    window.renderPrivateMessages = async () => {
         const container = document.getElementById('privateChatMessages');
         if (!activeChatFriend) return;
         
-        let msgs = JSON.parse(localStorage.getItem('private_msgs')) || [];
         let chatId = [currentUser.email, activeChatFriend].sort().join('_');
-        let filtered = msgs.filter(m => m.chatId === chatId);
+        const { data: msgs } = await _supabase.from('messages').select('*').eq('chat_id', chatId).order('created_at', { ascending: true });
         
-        if (filtered.length === 0) { container.innerHTML = '<p style="color: #aaa; text-align: center; margin-top: 50px;">Напишите первое сообщение!</p>'; return; }
+        if (!msgs || msgs.length === 0) { container.innerHTML = '<p style="color: #aaa; text-align: center; margin-top: 50px;">Напишите первое сообщение!</p>'; return; }
         
-        container.innerHTML = filtered.map(m => {
-            let isMine = m.from === currentUser.email;
+        container.innerHTML = msgs.map(m => {
+            let isMine = m.sender_email === currentUser.email;
             return `<div style="align-self: ${isMine ? 'flex-end' : 'flex-start'}; background: ${isMine ? 'var(--accent)' : 'rgba(255,255,255,0.1)'}; color: white; padding: 10px 15px; border-radius: 12px; max-width: 70%;">${escapeHtml(m.text)}</div>`;
         }).join('');
         container.scrollTop = container.scrollHeight;
     };
-
-    function updateOnlineStatus() {
-        if(!currentUser) return;
-        let db = JSON.parse(localStorage.getItem('teammates_db_v3')) || [];
-        let myTm = db.find(t => t.user_id === currentUser.id);
-        if(myTm) {
-            myTm.updated_at = Date.now();
-            localStorage.setItem('teammates_db_v3', JSON.stringify(db));
-        }
-    }
 });

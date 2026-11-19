@@ -65,7 +65,35 @@ main { padding: 40px 20px; max-width: 1400px; margin: 0 auto; }
 .friend-item:hover { background: rgba(255,255,255,0.05); }
 .friend-item.active { background: rgba(59, 130, 246, 0.2); border-left: 3px solid var(--accent); }
 
-@keyframes fadeInMenu {
-    from { opacity: 0; transform: translateY(-10px); }
-    to { opacity: 1; transform: translateY(0); }
+@keyframes fadeInMenu { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Мобильная адаптация меню */
+#navMenu {
+    margin-top: 20px;
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+@media (max-width: 768px) {
+    #navMenu {
+        display: none !important;
+        flex-direction: column;
+        align-items: center;
+        width: 100%;
+        background: #0b0e14;
+        padding: 20px 0;
+        border-radius: 12px;
+        border: 1px solid var(--panel-border);
+        position: absolute;
+        top: 80px;
+        left: 0;
+        z-index: 100;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+    }
+    #navMenu.show-mobile { display: flex !important; }
+    #mobileMenuBtn { display: block !important; }
+    header { padding: 20px 10px !important; }
+    h1 { margin-bottom: 0 !important; font-size: 24px !important; }
 }
